@@ -1465,10 +1465,6 @@ FindShardForUpdateOrDelete(Query *query, DistTableCacheEntry *cacheEntry,
 
 		return NULL;
 	}
-	else if (prunedShardCount == 0)
-	{
-		return NULL;
-	}
 
 	return (ShardInterval *) linitial(prunedShardList);
 }
