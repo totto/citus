@@ -90,11 +90,23 @@ RebuildQueryStrings(Query *originalQuery, List *taskList)
 			}
 		}
 
-		deparse_shard_query(query, relationId, task->anchorShardId,
-							newQueryString);
+		/*
+		 * UPDATE and DELETE queries can include subqueries, so treat them
+		 * differently.
+		 */
+		if (query->commandType == CMD_INSERT)
+		{
+			deparse_shard_query(query, relationId, task->anchorShardId, newQueryString);
+		}
+		else
+		{
+			List *relationShardList = task->relationShardList;
+			UpdateRelationToShardNames((Node *) query, relationShardList);
 
-		ereport(DEBUG4, (errmsg("distributed statement: %s",
-								newQueryString->data)));
+			pg_get_query_def(query, newQueryString);
+		}
+
+		ereport(DEBUG4, (errmsg("distributed statement: %s", newQueryString->data)));
 
 		task->queryString = newQueryString->data;
 	}
