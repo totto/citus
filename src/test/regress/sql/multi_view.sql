@@ -376,6 +376,8 @@ SELECT et.* FROM recent_10_users JOIN events_table et USING(user_id) ORDER BY et
 RESET citus.subquery_pushdown;
 
 -- explain tests
+SET enable_hashagg TO false;
+
 EXPLAIN (COSTS FALSE) SELECT user_id FROM recent_selected_users GROUP BY 1 ORDER BY 1;
 
 EXPLAIN (COSTS FALSE) SELECT *
@@ -390,6 +392,7 @@ EXPLAIN (COSTS FALSE) SELECT et.* FROM recent_10_users JOIN events_table et USIN
 SET citus.subquery_pushdown to ON;
 EXPLAIN (COSTS FALSE) SELECT et.* FROM recent_10_users JOIN events_table et USING(user_id) ORDER BY et.time DESC LIMIT 10;
 
+RESET enable_hashagg;
 RESET citus.subquery_pushdown;
 
 DROP VIEW recent_10_users;
