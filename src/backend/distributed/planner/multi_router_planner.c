@@ -1071,13 +1071,13 @@ CreateJob(Query *query)
 	Job *job = NULL;
 
 	job = CitusMakeNode(Job);
-	job->dependedJobList = NIL;
-	job->dependedJobList = NIL;
 	job->jobId = INVALID_JOB_ID;
-	job->subqueryPushdown = false;
 	job->jobQuery = query;
 	job->taskList = NIL;
+	job->dependedJobList = NIL;
+	job->subqueryPushdown = false;
 	job->requiresMasterEvaluation = false;
+	job->deferredPruning = false;
 
 	return job;
 }
@@ -1250,14 +1250,24 @@ CreateTask(TaskType taskType)
 	Task *task = NULL;
 
 	task = CitusMakeNode(Task);
+	task->taskType = taskType;
 	task->jobId = INVALID_JOB_ID;
 	task->taskId = INVALID_TASK_ID;
-	task->taskType = taskType;
 	task->queryString = NULL;
 	task->anchorShardId = INVALID_SHARD_ID;
+	task->taskPlacementList = NIL;
 	task->dependedTaskList = NIL;
-	task->replicationModel = REPLICATION_MODEL_INVALID;
+
+	task->partitionId = 0;
+	task->upstreamTaskId = INVALID_TASK_ID;
+	task->shardInterval = NULL;
+	task->assignmentConstrained = false;
+	task->shardId = INVALID_SHARD_ID;
+	task->taskExecution = NULL;
 	task->upsertQuery = false;
+	task->replicationModel = REPLICATION_MODEL_INVALID;
+
+	task->insertSelectQuery = false;
 	task->relationShardList = NIL;
 
 	return task;
@@ -1459,10 +1469,8 @@ FindShardForUpdateOrDelete(Query *query, DistTableCacheEntry *cacheEntry,
 	{
 		return NULL;
 	}
-	else
-	{
-		return (ShardInterval *) linitial(prunedShardList);
-	}
+
+	return (ShardInterval *) linitial(prunedShardList);
 }
 
 
