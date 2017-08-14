@@ -45,7 +45,6 @@ PG_FUNCTION_INFO_V1(recover_prepared_transactions);
 
 
 /* Local functions forward declarations */
-static int RecoverPreparedTransactions(void);
 static int RecoverWorkerTransactions(WorkerNode *workerNode);
 static List * NameListDifference(List *nameList, List *subtractList);
 static int CompareNames(const void *leftPointer, const void *rightPointer);
@@ -67,7 +66,7 @@ recover_prepared_transactions(PG_FUNCTION_ARGS)
 
 	CheckCitusVersion(ERROR);
 
-	recoveredTransactionCount = RecoverPreparedTransactions();
+	recoveredTransactionCount = RecoverTwoPhaseCommits();
 
 	PG_RETURN_INT32(recoveredTransactionCount);
 }
@@ -110,11 +109,11 @@ LogTransactionRecord(int groupId, char *transactionName)
 
 
 /*
- * RecoverPreparedTransactions recovers any pending prepared
- * transactions started by this node on other nodes.
+ * RecoverTwoPhaseCommits recovers any pending prepared transactions
+ * started by this node on other nodes.
  */
-static int
-RecoverPreparedTransactions(void)
+int
+RecoverTwoPhaseCommits(void)
 {
 	List *workerList = NIL;
 	ListCell *workerNodeCell = NULL;

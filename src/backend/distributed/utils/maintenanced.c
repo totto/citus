@@ -21,21 +21,26 @@
 #include "pgstat.h"
 
 #include "access/xact.h"
+#include "access/xlog.h"
 #include "catalog/pg_extension.h"
+#include "catalog/pg_namespace.h"
 #include "commands/extension.h"
 #include "libpq/pqsignal.h"
 #include "catalog/namespace.h"
 #include "distributed/distributed_deadlock_detection.h"
 #include "distributed/maintenanced.h"
 #include "distributed/metadata_cache.h"
+#include "distributed/transaction_recovery.h"
 #include "nodes/makefuncs.h"
 #include "postmaster/bgworker.h"
+#include "nodes/makefuncs.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/latch.h"
 #include "storage/lmgr.h"
 #include "storage/lwlock.h"
 #include "tcop/tcopprot.h"
+#include "utils/lsyscache.h"
 
 
 /*
@@ -81,6 +86,7 @@ typedef struct MaintenanceDaemonDBData
 
 /* config variable for distributed deadlock detection timeout */
 double DistributedDeadlockDetectionTimeoutFactor = 2.0;
+int Recover2PCInterval = 60000;
 
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static MaintenanceDaemonControlData *MaintenanceDaemonControl = NULL;
@@ -210,6 +216,7 @@ CitusMaintenanceDaemonMain(Datum main_arg)
 	Oid databaseOid = DatumGetObjectId(main_arg);
 	MaintenanceDaemonDBData *myDbData = NULL;
 	ErrorContextCallback errorCallback;
+	TimestampTz lastRecoveryTime = 0;
 
 	/*
 	 * Look up this worker's configuration.
@@ -330,6 +337,39 @@ CitusMaintenanceDaemonMain(Datum main_arg)
 			if (foundDeadlock)
 			{
 				timeout = timeout / 20.0;
+			}
+		}
+
+		if (Recover2PCInterval > 0 && !foundDeadlock && !RecoveryInProgress() &&
+			TimestampDifferenceExceeds(lastRecoveryTime, GetCurrentTimestamp(),
+									   Recover2PCInterval))
+		{
+			int recoveredTransactionCount = 0;
+
+			StartTransactionCommand();
+
+			if (!LockCitusExtension())
+			{
+				ereport(DEBUG1, (errmsg("could not lock the citus extension, "
+										"skipping 2PC recover")));
+			}
+			else if (CheckCitusVersion(DEBUG1))
+			{
+				/*
+				 * Record last recovery time at start to ensure we run once per
+				 * Recover2PCInterval even if RecoverTwoPhaseCommits takes some time.
+				 */
+				lastRecoveryTime = GetCurrentTimestamp();
+
+				recoveredTransactionCount = RecoverTwoPhaseCommits();
+			}
+
+			CommitTransactionCommand();
+
+			if (recoveredTransactionCount > 0)
+			{
+				ereport(LOG, (errmsg("maintenance daemon recovered %d transactions",
+									 recoveredTransactionCount)));
 			}
 		}
 

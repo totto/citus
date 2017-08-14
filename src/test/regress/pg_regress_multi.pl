@@ -246,6 +246,9 @@ push(@pgOptions, '-c', "citus.remote_task_check_interval=1ms");
 push(@pgOptions, '-c', "citus.shard_replication_factor=2");
 push(@pgOptions, '-c', "citus.node_connection_timeout=${connectionTimeout}");
 
+# Disable 2PC recovery in order to test it manually (deterministically)
+push(@pgOptions, '-c', "citus.recover_2pc_interval=-1");
+
 if ($followercluster)
 {
   push(@pgOptions, '-c', "max_wal_senders=10");
