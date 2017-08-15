@@ -1,12 +1,7 @@
 -- Test creation of mx tables and metadata syncing
 -- get rid of the previously created entries in pg_dist_transaction
 -- for the sake of getting consistent results in this test file
-SELECT recover_prepared_transactions();
- recover_prepared_transactions 
--------------------------------
-                             0
-(1 row)
-
+TRUNCATE pg_dist_transaction;
 CREATE TABLE distributed_mx_table (
     key text primary key,
     value jsonb
@@ -25,7 +20,7 @@ SELECT create_distributed_table('distributed_mx_table', 'key');
 SELECT count(*) FROM pg_dist_transaction;
  count 
 -------
-     5
+     2
 (1 row)
 
 -- Confirm that the metadata transactions have been committed
@@ -39,7 +34,7 @@ SELECT recover_prepared_transactions();
 SELECT count(*) FROM pg_dist_transaction;
  count 
 -------
-     3
+     0
 (1 row)
 
 \c - - - :worker_1_port
@@ -273,7 +268,7 @@ CONTEXT:  COMMIT PREPARED 'citus_0_should_commit'
 SELECT count(*) FROM pg_dist_transaction;
  count 
 -------
-     3
+     0
 (1 row)
 
 -- Confirm that transactions were correctly rolled forward
