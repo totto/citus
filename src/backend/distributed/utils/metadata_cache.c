@@ -642,11 +642,17 @@ LookupShardCacheEntry(int64 shardId)
 
 		if (!shardEntry->tableEntry->isValid)
 		{
+			Oid oldRelationId = LookupShardRelation(shardId);
+
 			/*
-			 * The cache entry might not be valid right now. Reload cache entry
-			 * and recheck (as the offset might have changed).
+			 * The cache entry might not be valid right now. Reload cache
+			 * entry and recheck. The offset might have changed, or more
+			 * gravely, this shard might now belong to a different
+			 * table. Access old relation and new relation to rebuild.
 			 */
+			LookupDistTableCacheEntry(oldRelationId);
 			LookupDistTableCacheEntry(shardEntry->tableEntry->relationId);
+
 			recheck = true;
 		}
 	}
