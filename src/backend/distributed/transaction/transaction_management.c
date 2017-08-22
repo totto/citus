@@ -22,11 +22,13 @@
 #include "distributed/backend_data.h"
 #include "distributed/connection_management.h"
 #include "distributed/hash_helpers.h"
+#include "distributed/metadata_cache.h"
 #include "distributed/multi_shard_transaction.h"
 #include "distributed/transaction_management.h"
 #include "distributed/placement_connection.h"
 #include "utils/hsearch.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 
 
@@ -45,6 +47,9 @@ dlist_head InProgressTransactions = DLIST_STATIC_INIT(InProgressTransactions);
 /* stack of active sub-transactions */
 static List *activeSubXacts = NIL;
 
+/* list of temporary tables in the current transaction */
+static List *temporaryTables = NIL;
+
 /*
  * Should this coordinated transaction use 2PC? Set by
  * CoordinatedTransactionUse2PC(), e.g. if DDL was issued and
@@ -61,6 +66,11 @@ static void CoordinatedSubTransactionCallback(SubXactEvent event, SubTransaction
 static void AdjustMaxPreparedTransactions(void);
 static void PushSubXact(SubTransactionId subId);
 static void PopSubXact(SubTransactionId subId);
+static void DropTemporaryTables(void);
+
+
+/* TODO: make a proper function that we can call */
+extern Datum worker_drop_distributed_table(PG_FUNCTION_ARGS);
 
 
 /*
@@ -242,6 +252,8 @@ CoordinatedTransactionCallback(XactEvent event, void *arg)
 			 * fails, which can lead to divergence when not using 2PC.
 			 */
 
+			DropTemporaryTables();
+
 			/*
 			 * Check whether the coordinated transaction is in a state we want
 			 * to persist, or whether we want to error out.  This handles the
@@ -408,4 +420,46 @@ ActiveSubXacts(void)
 	}
 
 	return activeSubXactsReversed;
+}
+
+
+void
+RegisterTemporaryTable(Oid relationId)
+{
+	MemoryContext oldContext = MemoryContextSwitchTo(CurTransactionContext);
+	temporaryTables = lappend_oid(temporaryTables, relationId);
+	MemoryContextSwitchTo(oldContext);
+}
+
+
+bool
+KnownTemporaryTable(Oid relationId)
+{
+	return list_member_oid(temporaryTables, relationId);
+}
+
+
+static void
+DropTemporaryTables(void)
+{
+	ListCell *tableCell = NULL;
+
+	foreach(tableCell, temporaryTables)
+	{
+		Oid relationId = lfirst_oid(tableCell);
+
+		if (get_rel_name(relationId) == NULL)
+		{
+			/* temp table was already dropped */
+			continue;
+		}
+
+		if (IsDistributedTable(relationId))
+		{
+			Datum relationIdDatum = DatumGetObjectId(relationId);
+			DirectFunctionCall1(worker_drop_distributed_table, relationIdDatum);
+		}
+	}
+
+	temporaryTables = NIL;
 }
