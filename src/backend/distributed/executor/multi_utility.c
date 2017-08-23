@@ -2276,6 +2276,7 @@ ErrorIfUnsupportedForeignConstraint(Relation relation, char distributionMethod,
 	int attrIdx = 0;
 	bool foreignConstraintOnPartitionColumn = false;
 	bool selfReferencingTable = false;
+	bool siblingTables = false;
 
 	pgConstraint = heap_open(ConstraintRelationId, AccessShareLock);
 	ScanKeyInit(&scanKey[0], Anum_pg_constraint_conrelid, BTEqualStrategyNumber, F_OIDEQ,
@@ -2297,6 +2298,21 @@ ErrorIfUnsupportedForeignConstraint(Relation relation, char distributionMethod,
 
 		referencedTableId = constraintForm->confrelid;
 		selfReferencingTable = referencingTableId == referencedTableId;
+		if (PartitionTable(referencingTableId) && PartitionTable(referencedTableId))
+		{
+			Oid referencingTableParentId = PartitionParentOid(referencingTableId);
+			Oid referencedTableParentId = PartitionParentOid(referencedTableId);
+
+			/*
+			 * If referencing table and referenced table are partitions of same parent
+			 * partitioned table, we call them sibling tables in this context.
+			 */
+			if (referencingTableParentId == referencedTableParentId)
+			{
+				siblingTables = true;
+			}
+		}
+
 
 		/*
 		 * We do not support foreign keys for reference tables. Here we skip the second
@@ -2345,10 +2361,11 @@ ErrorIfUnsupportedForeignConstraint(Relation relation, char distributionMethod,
 		}
 
 		/*
-		 * Some checks are not meaningful if foreign key references the table itself.
+		 * Some checks are not meaningful if foreign key references the table itself or
+		 * if it references to a table which belongs to same parent partitioned table.
 		 * Therefore we will skip those checks.
 		 */
-		if (!selfReferencingTable)
+		if (!selfReferencingTable && !siblingTables)
 		{
 			if (!IsDistributedTable(referencedTableId))
 			{
@@ -2379,7 +2396,8 @@ ErrorIfUnsupportedForeignConstraint(Relation relation, char distributionMethod,
 		{
 			/*
 			 * Partition column must exist in both referencing and referenced side of the
-			 * foreign key constraint. They also must be in same ordinal.
+			 * foreign key constraint. They also must be in same ordinal. We only use
+			 * varattno field of distributionColumn, which is same for sibling tables.
 			 */
 			referencedTablePartitionColumn = distributionColumn;
 		}
